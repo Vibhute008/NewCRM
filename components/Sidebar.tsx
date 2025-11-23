@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Phone, Briefcase, Code, LogOut, Shield } from 'lucide-react';
+import Logo from '../src/assets/Logo.png';
 
 const Sidebar = () => {
   const { user, logout } = useAuth();
@@ -24,7 +25,7 @@ const Sidebar = () => {
   return (
     <div className="w-64 bg-slate-900 text-white flex flex-col h-full shadow-xl flex-shrink-0 border-r border-slate-800">
       <div className="p-6 border-b border-slate-800 flex items-center">
-        <img src="/src/assets/Logo.png" alt="Raulo logo" className="w-12 h-12 object-contain rounded-md mr-3" />
+        <img src={Logo} alt="Raulo logo" className="w-12 h-12 object-contain rounded-md mr-3" />
         <div>
           <h1 className="text-[1.4rem] font-bold tracking-wider text-indigo-400">RAULO ENT.</h1>
           <p className="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">{user.name.toUpperCase()}</p>
