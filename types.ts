@@ -24,8 +24,10 @@ export enum LeadStatus {
 export interface Lead {
   id: string;
   name: string;
+  email?: string; // Added email field
   city: string;
-  category: string; // e.g., Real Estate, Cafe
+  country?: string; 
+  category: string; 
   phone: string;
   status: LeadStatus;
   firstCallDate?: string;
@@ -56,13 +58,16 @@ export interface CampaignLead {
   status: 'Contacted' | 'Replied' | 'Converted' | 'Pending';
 }
 
+export type CampaignStatus = 'Upcoming' | 'Active' | 'Past';
+
 export interface Campaign {
   id: string;
   name: string;
   platform: CampaignPlatform;
   leadsGenerated: number; // kept for summary stats
-  status: 'Active' | 'Completed' | 'Draft';
-  date: string;
+  status: CampaignStatus;
+  startDate: string; // YYYY-MM-DD
+  dueDate: string;   // YYYY-MM-DD
   leads: CampaignLead[]; // Detailed leads
   documents: string[]; // Attached files (screenshots, lists, etc)
 }

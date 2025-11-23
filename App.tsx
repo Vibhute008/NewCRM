@@ -1,7 +1,9 @@
+
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
+import { UIProvider } from './context/UIContext';
 import Login from './pages/Login';
 import BossPanel from './pages/boss/BossPanel';
 import TelecallerPanel from './pages/telecaller/TelecallerPanel';
@@ -86,11 +88,13 @@ const AppContent = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <DataProvider>
-        <HashRouter>
-          <AppContent />
-        </HashRouter>
-      </DataProvider>
+      <UIProvider>
+        <DataProvider>
+          <HashRouter>
+            <AppContent />
+          </HashRouter>
+        </DataProvider>
+      </UIProvider>
     </AuthProvider>
   );
 }

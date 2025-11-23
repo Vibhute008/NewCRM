@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
-import { Lead, Project, Campaign, DailyReport, LeadStatus, ProjectStatus, CampaignPlatform, UserRole, FolderNode } from '../types';
+import { Lead, Project, Campaign, DailyReport, LeadStatus, ProjectStatus, CampaignPlatform, UserRole, FolderNode, CampaignStatus } from '../types';
 
 interface DataContextType {
   leads: Lead[];
@@ -12,8 +12,12 @@ interface DataContextType {
   
   // Leads
   addLead: (lead: Lead) => void;
+  importLeads: (leads: Partial<Lead>[], countryName?: string) => void; // Added countryName param
   updateLead: (id: string, updates: Partial<Lead>) => void;
   deleteLead: (id: string) => void;
+  // Bulk Lead Actions
+  deleteLeads: (ids: string[]) => void;
+  updateLeads: (ids: string[], updates: Partial<Lead>) => void;
 
   // Projects
   addProject: (project: Project) => void;
@@ -48,12 +52,21 @@ const STORAGE_KEYS = {
   FOLDERS: 'raulo_crm_folders',
 };
 
+// Helper for Local Date YYYY-MM-DD
+const getLocalDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // Mock Data
 const INITIAL_LEADS: Lead[] = [
-  { id: '1', name: 'Supreme Interiors', city: 'Mumbai', category: 'Interior Designers', phone: '099201 61633', status: LeadStatus.INTERESTED_BOOKED, meetingDate: '2023-10-15T14:00', socialMediaLinks: ['https://instagram.com/supreme_interiors'] },
-  { id: '2', name: 'Artneit Designs', city: 'Mumbai', category: 'Interior Designers', phone: '075068 03602', status: LeadStatus.INTERESTED_NOT_BOOKED, remarks: 'Busy, call later', socialMediaLinks: [] },
-  { id: '3', name: 'Bandra Cafe', city: 'Mumbai', category: 'Cafes', phone: '098765 43210', status: LeadStatus.NEW, socialMediaLinks: ['https://facebook.com/bandracafe', 'https://instagram.com/bandracafe'] },
-  { id: '4', name: 'Delhi Estate', city: 'Delhi', category: 'Real Estate', phone: '011223 34455', status: LeadStatus.NOT_INTERESTED, socialMediaLinks: [] },
+  { id: '1', name: 'Supreme Interiors', email: 'info@supreme.com', city: 'Mumbai', country: 'India', category: 'Interior Designers', phone: '099201 61633', status: LeadStatus.INTERESTED_BOOKED, meetingDate: '2023-10-15T14:00', socialMediaLinks: ['https://instagram.com/supreme_interiors'] },
+  { id: '2', name: 'Artneit Designs', email: 'contact@artneit.com', city: 'Mumbai', country: 'India', category: 'Interior Designers', phone: '075068 03602', status: LeadStatus.INTERESTED_NOT_BOOKED, remarks: 'Busy, call later', socialMediaLinks: [] },
+  { id: '3', name: 'Bandra Cafe', email: 'hello@bandracafe.com', city: 'Mumbai', country: 'India', category: 'Cafes', phone: '098765 43210', status: LeadStatus.NEW, socialMediaLinks: ['https://facebook.com/bandracafe', 'https://instagram.com/bandracafe'] },
+  { id: '4', name: 'Delhi Estate', email: 'sales@delhiestate.in', city: 'Delhi', country: 'India', category: 'Real Estate', phone: '011223 34455', status: LeadStatus.NOT_INTERESTED, socialMediaLinks: [] },
 ];
 
 const INITIAL_PROJECTS: Project[] = [
@@ -93,6 +106,12 @@ const INITIAL_PROJECTS: Project[] = [
   }
 ];
 
+// Calculate statuses for mock data based on today
+const today = getLocalDateStr();
+const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+const lastWeek = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
 const INITIAL_CAMPAIGNS: Campaign[] = [
   { 
     id: '1', 
@@ -100,7 +119,8 @@ const INITIAL_CAMPAIGNS: Campaign[] = [
     platform: CampaignPlatform.EMAIL, 
     leadsGenerated: 2, 
     status: 'Active', 
-    date: new Date().toISOString().split('T')[0],
+    startDate: today,
+    dueDate: nextWeek,
     documents: ['email_copy_v1.pdf'],
     leads: [
       { id: 'e1', name: 'John Doe', email: 'john@corp.com', companyName: 'MegaCorp', status: 'Contacted' },
@@ -112,8 +132,9 @@ const INITIAL_CAMPAIGNS: Campaign[] = [
     name: 'CEO Outreach', 
     platform: CampaignPlatform.LINKEDIN, 
     leadsGenerated: 1, 
-    status: 'Active', 
-    date: new Date().toISOString().split('T')[0],
+    status: 'Past', 
+    startDate: lastWeek,
+    dueDate: yesterday,
     documents: [],
     leads: [
       { id: 'l1', name: 'Michael Scott', linkedinProfile: 'linkedin.com/in/mscott', status: 'Converted' }
@@ -123,14 +144,12 @@ const INITIAL_CAMPAIGNS: Campaign[] = [
     id: '3', 
     name: 'Influencer Collab', 
     platform: CampaignPlatform.INSTAGRAM, 
-    leadsGenerated: 2, 
-    status: 'Active', 
-    date: new Date().toISOString().split('T')[0],
+    leadsGenerated: 0, 
+    status: 'Upcoming', 
+    startDate: nextWeek,
+    dueDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
     documents: ['influencer_list.xlsx'],
-    leads: [
-      { id: 'i1', instagramHandle: '@design_daily', followersCount: '12.5k', status: 'Contacted' },
-      { id: 'i2', instagramHandle: '@arch_lovers', followersCount: '45k', status: 'Pending' }
-    ]
+    leads: []
   },
 ];
 
@@ -193,12 +212,124 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(reports)); }, [reports]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(folders)); }, [folders]);
 
-  // Lead Actions
-  const addLead = (lead: Lead) => setLeads(prev => [...prev, lead]);
+  // Automatic Campaign Status Update based on Date Range
+  useEffect(() => {
+    const todayStr = getLocalDateStr();
+    
+    setCampaigns(prevCampaigns => {
+      let hasChanges = false;
+      const updated = prevCampaigns.map(c => {
+        let newStatus: CampaignStatus = c.status;
+        
+        if (todayStr > c.dueDate) {
+          newStatus = 'Past';
+        } else if (todayStr >= c.startDate && todayStr <= c.dueDate) {
+          newStatus = 'Active';
+        } else if (todayStr < c.startDate) {
+          newStatus = 'Upcoming';
+        }
+
+        if (newStatus !== c.status) {
+          hasChanges = true;
+          return { ...c, status: newStatus };
+        }
+        return c;
+      });
+
+      return hasChanges ? updated : prevCampaigns;
+    });
+  }, []); // Run on mount
+
+  // Lead Actions - prepend to show new on top
+  const addLead = (lead: Lead) => setLeads(prev => [lead, ...prev]);
   const updateLead = (id: string, updates: Partial<Lead>) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
   };
   const deleteLead = (id: string) => setLeads(prev => prev.filter(l => l.id !== id));
+
+  // Bulk Lead Actions
+  const deleteLeads = (ids: string[]) => {
+    setLeads(prev => prev.filter(l => !ids.includes(l.id)));
+  };
+  
+  const updateLeads = (ids: string[], updates: Partial<Lead>) => {
+    setLeads(prev => prev.map(l => ids.includes(l.id) ? { ...l, ...updates } : l));
+  };
+
+  // Bulk Import with Folder Auto-Creation
+  const importLeads = (newLeadsData: Partial<Lead>[], countryName: string = 'India') => {
+    // 1. Sanitize City Names to prevent "Road Names" or "City, State" clutter
+    const sanitizeCity = (raw: string) => {
+        if (!raw) return 'Unknown';
+        let clean = raw.split(/[,(]/)[0];
+        if (clean.includes(' - ')) {
+            clean = clean.split(' - ')[0];
+        }
+        clean = clean.trim();
+        clean = clean.replace(/\w\S*/g, (w) => (w.replace(/^\w/, (c) => c.toUpperCase())));
+        return clean || 'Unknown';
+    };
+
+    const processedLeads = newLeadsData.map(l => ({
+        ...l,
+        city: l.city ? sanitizeCity(l.city) : 'Unknown',
+        category: l.category ? l.category.trim() : 'General',
+        country: countryName
+    }));
+
+    setFolders(prev => {
+        const next = JSON.parse(JSON.stringify(prev));
+        const ensureChild = (parent: FolderNode, name: string, type: FolderNode['type']) => {
+            let child = parent.children?.find(c => c.name.trim().toLowerCase() === name.trim().toLowerCase());
+            if (!child) {
+                child = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    name: name.trim(),
+                    type,
+                    children: []
+                };
+                parent.children = [...(parent.children || []), child];
+            }
+            return child;
+        };
+
+        // Determine target country folder
+        let cName = countryName;
+        let countryNode = next.children?.find((c: FolderNode) => c.name.trim().toLowerCase() === cName.trim().toLowerCase());
+        
+        if (!countryNode) {
+             countryNode = ensureChild(next, cName, 'country');
+        }
+
+        processedLeads.forEach(lead => {
+            const city = lead.city;
+            const category = lead.category;
+            if (city && category) {
+                const cityNode = ensureChild(countryNode!, city!, 'city');
+                ensureChild(cityNode, category!, 'category');
+            }
+        });
+
+        return next;
+    });
+
+    setLeads(prev => {
+        const readyLeads = processedLeads.map(l => ({
+            id: l.id || Math.random().toString(36).substr(2, 9),
+            name: l.name || 'Unknown',
+            email: l.email || '',
+            city: l.city || 'Unknown',
+            country: l.country || countryName,
+            category: l.category || 'General',
+            phone: l.phone || '',
+            status: l.status || LeadStatus.NEW,
+            remarks: l.remarks || '',
+            meetingDate: l.meetingDate,
+            socialMediaLinks: l.socialMediaLinks || []
+        } as Lead));
+        return [...readyLeads, ...prev];
+    });
+  };
 
   // Project Actions
   const addProject = (project: Project) => setProjects(prev => [...prev, project]);
@@ -217,7 +348,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const deleteCampaign = (id: string) => setCampaigns(prev => prev.filter(c => c.id !== id));
 
   // Report Actions
-  const addReport = (report: DailyReport) => setReports(prev => [...prev, report]);
+  const addReport = (report: DailyReport) => setReports(prev => [report, ...prev]);
 
   // File Actions
   const storeFile = (id: string, file: File) => {
@@ -228,7 +359,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Folder Actions (Recursive)
   const addFolder = (parentId: string, name: string, type: 'country' | 'city' | 'category') => {
     const newFolder: FolderNode = { id: Math.random().toString(36).substr(2, 9), name, type, children: [] };
-    
     const addNodeRecursive = (node: FolderNode): FolderNode => {
       if (node.id === parentId) {
         return { ...node, children: [...(node.children || []), newFolder] };
@@ -251,22 +381,54 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteFolder = (id: string) => {
-    const deleteNodeRecursive = (node: FolderNode): FolderNode => {
-        // If children contains the ID, filter it out
-        if (node.children) {
-            const filteredChildren = node.children.filter(child => child.id !== id);
-            // If we filtered something, we return the new node
-            if (filteredChildren.length !== node.children.length) {
-                return { ...node, children: filteredChildren };
-            }
-            // Otherwise continue searching deeper
-            return { ...node, children: node.children.map(deleteNodeRecursive) };
+    let targetNode: FolderNode | null = null;
+    let targetParent: FolderNode | null = null;
+    const findTarget = (node: FolderNode, parent: FolderNode | null): boolean => {
+        if (node.id === id) {
+            targetNode = node;
+            targetParent = parent;
+            return true;
         }
-        return node;
+        if (node.children) {
+            for (const child of node.children) {
+                if (findTarget(child, node)) return true;
+            }
+        }
+        return false;
     };
-    
-    // Special case: cannot delete root from here usually, but let's handle children
-    setFolders(prev => deleteNodeRecursive(prev));
+    findTarget(folders, null);
+
+    if (targetNode) {
+        const node = targetNode as FolderNode;
+        const parent = targetParent;
+        setLeads(prev => prev.filter(l => {
+            if (node.type === 'category' && parent?.type === 'city') {
+                return !(l.city === parent.name && l.category === node.name);
+            }
+            if (node.type === 'city') {
+                return l.city !== node.name;
+            }
+            if (node.type === 'country') {
+                const cities = node.children?.map(c => c.name) || [];
+                // Delete leads from this country (checking city membership as proxy if country field missing, or explicit country)
+                return !(l.country === node.name || (!l.country && cities.includes(l.city)));
+            }
+            return true;
+        }));
+
+        const deleteNodeRecursive = (n: FolderNode): FolderNode => {
+            if (n.children) {
+                const filteredChildren = n.children.filter(child => child.id !== id);
+                if (filteredChildren.length !== n.children.length) {
+                    return { ...n, children: filteredChildren };
+                }
+                return { ...n, children: n.children.map(deleteNodeRecursive) };
+            }
+            return n;
+        };
+        
+        setFolders(prev => deleteNodeRecursive(prev));
+    }
   };
 
   return (
@@ -278,8 +440,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       folders,
       fileMap,
       addLead,
+      importLeads,
       updateLead,
       deleteLead,
+      deleteLeads,
+      updateLeads,
       addProject,
       updateProject,
       deleteProject,

@@ -1,225 +1,340 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useData } from '../../context/DataContext';
-import { LeadStatus } from '../../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Users, TrendingUp, PhoneCall, Code, ExternalLink } from 'lucide-react';
+import { useUI } from '../../context/UIContext';
+import { LeadStatus, CampaignPlatform } from '../../types';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import { Users, TrendingUp, PhoneCall, Code, ExternalLink, FileText, ArrowRight, Activity, CalendarCheck, CheckCircle2, Target, ThumbsUp, Clock, Mail, Instagram, Linkedin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const BossPanel = () => {
   const { leads, projects, campaigns, reports, fileMap } = useData();
+  const { showAlert } = useUI();
 
-  // Stats Calculation
   const totalLeads = leads.length;
-  const interestedLeads = leads.filter(l => l.status === LeadStatus.INTERESTED_BOOKED || l.status === LeadStatus.INTERESTED_NOT_BOOKED).length;
   const bookedMeetings = leads.filter(l => l.status === LeadStatus.INTERESTED_BOOKED).length;
-  const conversionRate = totalLeads > 0 ? Math.round((bookedMeetings / totalLeads) * 100) : 0;
-  const responseRate = totalLeads > 0 ? Math.round((interestedLeads / totalLeads) * 100) : 0;
+  const conversionRate = totalLeads > 0 ? ((bookedMeetings / totalLeads) * 100).toFixed(1) : 0;
   
   const totalProjects = projects.length;
   const ongoingProjects = projects.filter(p => p.status === 'Ongoing').length;
+  const completedProjects = projects.filter(p => p.status === 'Completed').length;
   
   const totalCampaigns = campaigns.length;
-  const totalCampaignLeads = campaigns.reduce((acc, curr) => acc + curr.leadsGenerated, 0);
+  const activeCampaigns = useMemo(() => campaigns.filter(c => c.status === 'Active').length, [campaigns]);
 
-  // Chart Data
   const leadStatusData = [
     { name: 'Booked', value: leads.filter(l => l.status === LeadStatus.INTERESTED_BOOKED).length },
     { name: 'Interested', value: leads.filter(l => l.status === LeadStatus.INTERESTED_NOT_BOOKED).length },
     { name: 'Not Interested', value: leads.filter(l => l.status === LeadStatus.NOT_INTERESTED).length },
     { name: 'New', value: leads.filter(l => l.status === LeadStatus.NEW).length },
     { name: 'Follow Up', value: leads.filter(l => l.status === LeadStatus.FOLLOW_UP).length },
-  ].filter(d => d.value > 0); // Only show active statuses in chart
+  ].filter(d => d.value > 0); 
 
   const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#6366f1', '#3b82f6'];
 
-  const campaignPerformance = campaigns.map(c => ({
-    name: c.name,
-    leads: c.leadsGenerated
-  }));
+  const campaignStats = useMemo(() => {
+    let total = 0;
+    let converted = 0;
+    let interested = 0;
+    let pending = 0;
+    let contacted = 0;
 
-  const handleOpenReport = (report: { id: string, fileName: string }) => {
-    const url = fileMap[report.id];
+    campaigns.forEach(c => {
+      total += c.leads.length;
+      c.leads.forEach(l => {
+        if (l.status === 'Converted') converted++;
+        else if (l.status === 'Replied') interested++;
+        else if (l.status === 'Contacted') contacted++;
+        else pending++;
+      });
+    });
+
+    const inProgress = interested + contacted;
+    const responseRate = total > 0 ? (((interested + converted) / total) * 100).toFixed(0) : '0';
+    const conversionRate = total > 0 ? ((converted / total) * 100).toFixed(1) : '0';
+
+    return { 
+        total, 
+        converted, 
+        inProgress,
+        pending: pending + contacted, 
+        responseRate,
+        conversionRate
+    };
+  }, [campaigns]);
+
+  const topCampaigns = useMemo(() => {
+    return campaigns
+        .filter(c => c.status === 'Active' || c.status === 'Past')
+        .sort((a, b) => {
+             const convA = a.leads.filter(l => l.status === 'Converted').length;
+             const convB = b.leads.filter(l => l.status === 'Converted').length;
+             return convB - convA;
+        });
+  }, [campaigns]);
+
+  const handleOpenReport = async (reportId: string, fileName: string) => {
+    const url = fileMap[reportId];
     if (url) {
       window.open(url, '_blank');
     } else {
-      alert(`Simulation: Opening "${report.fileName}".\n(No live file in this demo session.)`);
+      await showAlert(`Simulation: Opening "${fileName}" from server.`, "File Access");
     }
   };
 
+  const getPlatformIcon = (p: CampaignPlatform) => {
+    switch (p) {
+      case CampaignPlatform.INSTAGRAM: return <Instagram size={14} className="text-pink-600" />;
+      case CampaignPlatform.LINKEDIN: return <Linkedin size={14} className="text-blue-700" />;
+      case CampaignPlatform.EMAIL: return <Mail size={14} className="text-gray-500" />;
+    }
+  };
+
+  const KPICard = ({ title, value, sub, icon: Icon, color }: any) => (
+    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative overflow-hidden group">
+      <div className={`absolute top-0 right-0 p-4 opacity-[0.08] group-hover:opacity-20 transition-opacity ${color}`}>
+        <Icon size={64} />
+      </div>
+      <div className="relative z-10">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${color} bg-opacity-10 text-opacity-100`}>
+           <Icon size={20} className={color.replace('bg-', 'text-')} />
+        </div>
+        <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">{title}</h3>
+        <p className="text-3xl font-extrabold text-gray-800 mt-1">{value}</p>
+        <p className="text-xs text-gray-400 mt-1 font-medium">{sub}</p>
+      </div>
+    </div>
+  );
+
+  const ReportList = ({ uploader, accentColor }: { uploader: string, accentColor: string }) => {
+    const deptReports = reports.filter(r => r.uploader === uploader);
+    
+    return (
+      <div className="mt-auto pt-4 border-t border-gray-100 shrink-0">
+        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center">
+          <FileText size={12} className="mr-1" /> Recent Reports
+        </h4>
+        <div className="space-y-2 h-24 overflow-y-auto custom-scrollbar pr-1">
+          {deptReports.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-gray-300">
+              <FileText size={24} className="mb-1 opacity-50"/>
+              <span className="text-[10px]">No reports yet</span>
+            </div>
+          )}
+          {deptReports.map(r => (
+            <div key={r.id} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100 group hover:border-gray-200 transition-colors">
+              <div className="overflow-hidden mr-2">
+                <p className="text-xs font-semibold text-gray-700 truncate">{r.fileName}</p>
+                <p className="text-[10px] text-gray-400">{r.date}</p>
+              </div>
+              <button 
+                onClick={() => handleOpenReport(r.id, r.fileName)}
+                className={`p-1.5 rounded-md bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-${accentColor}-50 text-${accentColor}-600`}
+              >
+                <ExternalLink size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="space-y-8 pb-10 max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800">Master Overview</h1>
-          <p className="text-gray-500">Welcome back, Boss.</p>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Executive Dashboard</h1>
+          <p className="text-gray-500 mt-1">Real-time insights across the enterprise.</p>
         </div>
-        <div className="text-sm bg-white px-4 py-2 rounded-lg shadow-sm text-gray-600">
-            Current Date: {new Date().toLocaleDateString()}
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-gray-500 font-medium">Total Leads</h3>
-            <Users className="text-indigo-500" size={24} />
-          </div>
-          <p className="text-3xl font-bold text-gray-800">{totalLeads}</p>
-          <p className="text-xs text-green-500 mt-1 flex items-center">+12% from yesterday</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-gray-500 font-medium">Meetings Booked</h3>
-            <PhoneCall className="text-emerald-500" size={24} />
-          </div>
-          <p className="text-3xl font-bold text-gray-800">{bookedMeetings}</p>
-          <p className="text-xs text-gray-400 mt-1">High conversion rate</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-gray-500 font-medium">Active Campaigns</h3>
-            <TrendingUp className="text-blue-500" size={24} />
-          </div>
-          <p className="text-3xl font-bold text-gray-800">{totalCampaigns}</p>
-          <p className="text-xs text-blue-500 mt-1">{totalCampaignLeads} leads generated</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-gray-500 font-medium">Ongoing Projects</h3>
-            <Code className="text-purple-500" size={24} />
-          </div>
-          <p className="text-3xl font-bold text-gray-800">{ongoingProjects}</p>
-          <p className="text-xs text-gray-400 mt-1">Total {totalProjects} projects</p>
+        <div className="flex items-center space-x-2 text-sm bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200 text-gray-600">
+            <CalendarCheck size={16} className="text-indigo-500"/>
+            <span className="font-medium">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
         </div>
       </div>
 
-      {/* Main Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <KPICard title="Total Leads" value={totalLeads} sub="Across all pipelines" icon={Users} color="bg-indigo-500" />
+        <KPICard title="Conversion Rate" value={`${conversionRate}%`} sub={`${bookedMeetings} Meetings Booked`} icon={Activity} color="bg-emerald-500" />
+        <KPICard title="Active Campaigns" value={activeCampaigns} sub={`${totalCampaigns} Total Campaigns`} icon={TrendingUp} color="bg-blue-500" />
+        <KPICard title="Project Velocity" value={ongoingProjects} sub={`${completedProjects} Completed`} icon={Code} color="bg-purple-500" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Sales Performance */}
-        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 flex flex-col max-h-[500px]">
-          <h2 className="text-lg font-bold text-gray-800 mb-6">Campaign Performance (Sales Manager)</h2>
-          <div className="h-48 flex-shrink-0">
-             <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={campaignPerformance}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{fontSize: 12}} />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="leads" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                </BarChart>
-             </ResponsiveContainer>
-          </div>
-          <div className="mt-4 border-t pt-4 flex-1 flex flex-col min-h-0">
-             <h4 className="text-xs font-semibold uppercase text-gray-400 mb-2 flex justify-between items-center">
-                 Daily Reports
-                 <span className="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded-full">{reports.length} files</span>
-             </h4>
-             <div className="overflow-y-auto custom-scrollbar pr-1 flex-1">
-                 <ul className="text-sm space-y-1">
-                     {reports.map(r => (
-                         <li 
-                            key={r.id} 
-                            className="text-gray-600 flex justify-between items-center p-2 hover:bg-gray-50 rounded cursor-pointer group transition-colors border-b border-gray-50 last:border-0"
-                            onClick={() => handleOpenReport(r)}
-                         >
-                             <span className="flex items-center group-hover:text-indigo-600 truncate">
-                                 <span className="truncate max-w-[180px]">{r.fileName}</span>
-                                 <ExternalLink size={12} className="ml-2 opacity-0 group-hover:opacity-100 flex-shrink-0" />
-                             </span>
-                             <span className="text-xs text-gray-400 flex-shrink-0">{r.date}</span>
-                         </li>
-                     ))}
-                     {reports.length === 0 && <li className="text-gray-400 italic text-xs p-2">No reports uploaded yet.</li>}
-                 </ul>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col overflow-hidden h-[560px]">
+          <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white shrink-0">
+             <div className="flex items-center">
+                <div className="p-2 bg-blue-100 rounded-lg mr-3 text-blue-600"><TrendingUp size={20} /></div>
+                <div>
+                    <h2 className="font-bold text-gray-800">Sales</h2>
+                    <p className="text-xs text-gray-500">Campaign Performance</p>
+                </div>
              </div>
+             <Link to="/sales" className="p-2 hover:bg-white rounded-full transition-colors text-gray-400 hover:text-blue-600"><ArrowRight size={18}/></Link>
+          </div>
+          <div className="p-5 flex-1 flex flex-col overflow-hidden">
+            
+            <div className="grid grid-cols-4 gap-2 mb-6 shrink-0">
+                <div className="text-center">
+                    <p className="text-2xl font-extrabold text-gray-800 leading-none">{campaignStats.total}</p>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">Total Leads</p>
+                </div>
+                <div className="text-center">
+                    <p className="text-2xl font-extrabold text-emerald-600 leading-none">{campaignStats.converted}</p>
+                    <p className="text-[10px] text-emerald-500 font-bold uppercase mt-1">Won Leads</p>
+                </div>
+                <div className="text-center">
+                    <p className="text-2xl font-extrabold text-blue-600 leading-none">{campaignStats.inProgress}</p>
+                    <p className="text-[10px] text-blue-500 font-bold uppercase mt-1" title="Replied or Contacted">Engaged</p>
+                </div>
+                <div className="text-center">
+                    <p className="text-2xl font-extrabold text-gray-500 leading-none">{campaignStats.conversionRate}%</p>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">Conversion</p>
+                </div>
+            </div>
+
+            <div className="flex-1 min-h-0 mb-2 space-y-4 overflow-y-auto custom-scrollbar pr-2">
+              <div className="flex justify-between items-end border-b border-gray-50 pb-1 sticky top-0 bg-white z-10">
+                <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Top Campaigns</p>
+                <span className="text-[10px] text-gray-400">Conv. / Total</span>
+              </div>
+              
+              {topCampaigns.map(c => {
+                  const cTotal = c.leads.length;
+                  const cConv = c.leads.filter(l => l.status === 'Converted').length;
+                  const cProg = cTotal > 0 ? (cConv / cTotal) * 100 : 0;
+                  
+                  return (
+                      <div key={c.id}>
+                          <div className="flex justify-between items-center mb-1">
+                              <div className="flex items-center gap-2">
+                                  {getPlatformIcon(c.platform)}
+                                  <span className="text-sm font-semibold text-gray-700 truncate max-w-[120px]">{c.name}</span>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded border uppercase font-bold
+                                      ${c.status === 'Active' ? 'bg-green-50 text-green-600 border-green-100' : 'bg-gray-50 text-gray-400 border-gray-100'}`}>
+                                      {c.status}
+                                  </span>
+                              </div>
+                              <span className="text-xs font-mono text-gray-500">{cConv} / {cTotal}</span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                              <div 
+                                className="h-full bg-indigo-500 rounded-full transition-all duration-500" 
+                                style={{ width: `${cProg}%` }} 
+                              />
+                          </div>
+                          <div className="flex justify-between mt-0.5">
+                              <span className="text-[9px] text-gray-400">{c.startDate} - {c.dueDate}</span>
+                              <span className="text-[9px] text-indigo-500 font-medium">{cProg.toFixed(0)}% Won</span>
+                          </div>
+                      </div>
+                  )
+              })}
+              {topCampaigns.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-8 italic">No active campaign data.</p>
+              )}
+            </div>
+
+            <ReportList uploader="Sales Manager" accentColor="blue" />
           </div>
         </div>
 
-        {/* Telecaller Overview */}
-        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 flex flex-col h-full">
-          <h2 className="text-lg font-bold text-gray-800 mb-4">Lead Status Distribution (Telecaller)</h2>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 flex-1">
-            {/* Pie Chart */}
-            <div className="h-48 sm:h-auto flex items-center justify-center">
-                 <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col overflow-hidden h-[560px]">
+          <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-emerald-50 to-white shrink-0">
+             <div className="flex items-center">
+                <div className="p-2 bg-emerald-100 rounded-lg mr-3 text-emerald-600"><PhoneCall size={20} /></div>
+                <div>
+                    <h2 className="font-bold text-gray-800">Telecalling</h2>
+                    <p className="text-xs text-gray-500">Lead Processing</p>
+                </div>
+             </div>
+             <Link to="/telecaller" className="p-2 hover:bg-white rounded-full transition-colors text-gray-400 hover:text-emerald-600"><ArrowRight size={18}/></Link>
+          </div>
+          <div className="p-5 flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 mb-4 relative -mx-4">
+                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={leadStatusData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={40}
-                        outerRadius={60}
-                        paddingAngle={5}
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={4}
                         dataKey="value"
                       >
                         {leadStatusData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
                     </PieChart>
                  </ResponsiveContainer>
-            </div>
-
-            {/* Data Details */}
-            <div className="flex flex-col justify-center space-y-4">
-                {/* Quick Stats */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gray-50 p-3 rounded-lg text-center">
-                        <p className="text-xs text-gray-500 mb-1">Conversion</p>
-                        <p className="text-xl font-bold text-emerald-600">{conversionRate}%</p>
+                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="text-center">
+                        <span className="block text-3xl font-bold text-gray-800">{bookedMeetings}</span>
+                        <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">Meetings</span>
                     </div>
-                    <div className="bg-gray-50 p-3 rounded-lg text-center">
-                        <p className="text-xs text-gray-500 mb-1">Response</p>
-                        <p className="text-xl font-bold text-blue-600">{responseRate}%</p>
-                    </div>
-                </div>
-
-                {/* List Breakdown */}
-                <div className="space-y-2 border-t border-gray-100 pt-4 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-                   {leadStatusData.map((entry, index) => (
-                       <div key={entry.name} className="flex justify-between items-center text-xs">
-                           <div className="flex items-center text-gray-600">
-                               <div className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                               {entry.name}
-                           </div>
-                           <span className="font-bold text-gray-800 bg-gray-50 px-2 py-0.5 rounded">{entry.value}</span>
-                       </div>
-                   ))}
-                   {leadStatusData.length === 0 && <p className="text-xs text-gray-400 text-center">No leads data available.</p>}
-                </div>
+                 </div>
             </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center mb-4 px-4 shrink-0">
+                 {leadStatusData.slice(0,4).map((d, i) => (
+                    <div key={i} className="flex items-center text-xs">
+                        <div className="w-2.5 h-2.5 rounded-full mr-2" style={{backgroundColor: COLORS[i]}}></div>
+                        <span className="text-gray-600">{d.name}</span>
+                        <span className="ml-1 text-gray-400 font-mono">({d.value})</span>
+                    </div>
+                 ))}
+            </div>
+            <ReportList uploader="Telecaller" accentColor="emerald" />
           </div>
         </div>
-      </div>
 
-      {/* Direct Controls */}
-      <div className="bg-slate-900 rounded-xl p-8 text-white">
-          <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">God Mode Actions</h2>
-              <span className="bg-slate-800 px-3 py-1 rounded text-xs text-slate-300">Full Access Granted</span>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col overflow-hidden h-[560px]">
+          <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-purple-50 to-white shrink-0">
+             <div className="flex items-center">
+                <div className="p-2 bg-purple-100 rounded-lg mr-3 text-purple-600"><Code size={20} /></div>
+                <div>
+                    <h2 className="font-bold text-gray-800">Technology</h2>
+                    <p className="text-xs text-gray-500">Development</p>
+                </div>
+             </div>
+             <Link to="/tech" className="p-2 hover:bg-white rounded-full transition-colors text-gray-400 hover:text-purple-600"><ArrowRight size={18}/></Link>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Link to="/tech" className="block bg-slate-800 hover:bg-slate-700 p-4 rounded-lg transition-colors border border-slate-700">
-                  <h3 className="font-bold text-indigo-400 mb-1">Manage Tech Projects</h3>
-                  <p className="text-xs text-slate-400">Edit milestones, upload docs, move cards.</p>
-              </Link>
-              <Link to="/telecaller" className="block bg-slate-800 hover:bg-slate-700 p-4 rounded-lg transition-colors border border-slate-700">
-                  <h3 className="font-bold text-indigo-400 mb-1">Audit Leads</h3>
-                  <p className="text-xs text-slate-400">Check calls, update status, view hierarchy.</p>
-              </Link>
-              <Link to="/sales" className="block bg-slate-800 hover:bg-slate-700 p-4 rounded-lg transition-colors border border-slate-700">
-                  <h3 className="font-bold text-indigo-400 mb-1">Campaign Oversight</h3>
-                  <p className="text-xs text-slate-400">View daily reports and metrics.</p>
-              </Link>
+          <div className="p-5 flex-1 flex flex-col overflow-hidden">
+            <div className="grid grid-cols-2 gap-3 mb-6 shrink-0">
+                <div className="bg-purple-50 rounded-xl p-4 text-center border border-purple-100">
+                    <p className="text-3xl font-extrabold text-purple-600">{ongoingProjects}</p>
+                    <p className="text-[10px] text-purple-400 font-bold uppercase mt-1">Ongoing</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
+                    <p className="text-3xl font-extrabold text-gray-600">{completedProjects}</p>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">Completed</p>
+                </div>
+            </div>
+            
+             <div className="flex-1 min-h-0 mb-4 overflow-y-auto custom-scrollbar pr-2">
+                <div className="space-y-4">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 pb-2 sticky top-0 bg-white">Latest Project Updates</p>
+                    {projects.map(p => (
+                        <div key={p.id} className="flex items-start group">
+                            <CheckCircle2 size={16} className={`mt-0.5 mr-3 shrink-0 transition-colors ${p.status === 'Completed' ? 'text-green-500' : 'text-purple-400 group-hover:text-purple-600'}`} />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-700 truncate">{p.name}</p>
+                                <p className="text-xs text-gray-500 truncate mt-0.5">{p.description}</p>
+                            </div>
+                        </div>
+                    ))}
+                    {projects.length === 0 && (
+                         <p className="text-sm text-gray-400 text-center py-4 italic">No projects started.</p>
+                    )}
+                </div>
+             </div>
+             <ReportList uploader="Tech Lead" accentColor="purple" />
           </div>
+        </div>
+
       </div>
     </div>
   );
